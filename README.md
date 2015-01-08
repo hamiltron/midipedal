@@ -1,5 +1,11 @@
 # Arduino One-Octave Foot Pedal MIDI Controller
 
+## License
+
+MIT
+
+If you really need to rip this off for a commercial application, consider hiring me instead. :wink:
+
 ## Hardware 
 
 I've written this for the [Arduino Micro](http://arduino.cc/en/Main/ArduinoBoardMicro). 
