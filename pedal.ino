@@ -13,6 +13,7 @@
 #define EE_ADDR_CHANNEL (2)
 
 #define VELOCITY (127)
+#define HIGH_OCTAVE (9)
 
 #define DOWN_BUTTON   (0xD)
 #define CONFIG_BUTTON (0xE)
@@ -25,6 +26,11 @@
 
 #define TLC5916_OE (10)
 #define TLC5916_LE (11)
+
+// This utility macro function takes a key (0 = c, 1 = c#, 2 = b, etc) 
+//   and the octave number and returns a valid midi note number
+//   Not that for efficiency, it does not bounds check. 
+#define MIDI_NOTE_NUM(key, octave) (key + 12 * octave)
 
 enum states {
   NORMAL, 
@@ -61,68 +67,91 @@ byte row_pins[4] = {6, 7, 8, 9};
 byte col_pins[4] = {2, 3, 4, 5}; 
 Keypad switches = Keypad(makeKeymap(keys), row_pins, col_pins, 4, 4);
 
-char note_status[128];
-char octave;
-char poly;
-char channel;
-char state;
-char seven_seg_state;
-char flash_state;
+byte note_status[128];
+byte octave;
+byte poly;
+byte channel;
+byte state;
+byte seven_seg_state;
+byte flash_state;
 unsigned long flash_timeout;
 
 void setup() {
-  char i;
+  byte i;
   
   //  Set MIDI baud rate:
   Serial1.begin(31250);
   
   // initialize the note status array and status vars
-  octave = EEPROM.read(EE_ADDR_OCTAVE) & 0x0F;
-  poly = EEPROM.read(EE_ADDR_POLY) & 0x01;
-  channel = EEPROM.read(EE_ADDR_CHANNEL) & 0x0F;
+  octave = EEPROM.read(EE_ADDR_OCTAVE);
+  poly = EEPROM.read(EE_ADDR_POLY);
+  channel = EEPROM.read(EE_ADDR_CHANNEL);
   for (i = 0; i < 128; i++) {
     note_status[i] = NOTE_OFF;
   }
   state = NORMAL;
+  
+  // handle cases where EEPROM gives erroneous values 
+  //   (like when it's never been written to before)
+  if (octave > HIGH_OCTAVE) {
+    octave = 0;
+    EEPROM.write(EE_ADDR_OCTAVE, octave);
+  }
+  if (channel > 0x0F) {
+    channel = 0;
+    EEPROM.write(EE_ADDR_CHANNEL, channel);
+  }
+  if (poly > 1) {
+    poly = 0;
+    EEPROM.write(EE_ADDR_POLY, poly);
+  }
   
   // setup keypad class timings
   switches.setDebounceTime(DEBOUNCE_MS);
   switches.setHoldTime(HOLD_MS);
   
   // init TLC5916 interface and state
+  SPI.begin();
   pinMode(TLC5916_OE, OUTPUT);
   digitalWrite(TLC5916_OE, HIGH);
   pinMode(TLC5916_LE, OUTPUT);
   digitalWrite(TLC5916_LE, LOW);
-  write_digit(octave);
+  write_digit(hex_character[octave]);
   write_dec_point(poly);
   
   // init seven seg flash timer and state
+  flash_seven_seg();
 }
 
 void loop() {
-  char i;
+  byte i;
   char kchar;
   char kstate;
 
   // check flash timeout
-  if (flash_timeout != 0 && flash_timeout < millis()) {
-    switch (flash_state) {
-      case OFF:
-        flash_timeout = 0;
-      break;
-      case FLASH:
-        flash_timeout = 0;
-        digitalWrite(TLC5916_OE, HIGH);
-      break;
-      case BLINK_ON:
-        flash_timeout = millis() + BLINK_PERIOD_MS / 2;
-        digitalWrite(TLC5916_OE, HIGH);
-      break;
-      case BLINK_OFF:
-        flash_timeout = millis() + BLINK_PERIOD_MS / 2;
-        digitalWrite(TLC5916_OE, LOW);
-      break;
+  if (flash_timeout != 0) {
+    if (flash_timeout < millis()) {
+      switch (flash_state) {
+        case OFF:
+          flash_timeout = 0;
+          flash_state = OFF;
+        break;
+        case FLASH:
+          flash_timeout = 0;
+          digitalWrite(TLC5916_OE, HIGH);
+          flash_state = OFF;
+        break;
+        case BLINK_ON:
+          flash_timeout = millis() + BLINK_PERIOD_MS / 2;
+          digitalWrite(TLC5916_OE, HIGH);
+          flash_state = BLINK_OFF;
+        break;
+        case BLINK_OFF:
+          flash_timeout = millis() + BLINK_PERIOD_MS / 2;
+          digitalWrite(TLC5916_OE, LOW);
+          flash_state = BLINK_ON;
+        break;
+      }
     }
   }
   
@@ -132,19 +161,19 @@ void loop() {
       if (switches.key[i].stateChanged) {
         kchar = switches.key[i].kchar;
         kstate = switches.key[i].kstate;
-        
+
         // pedal note switches
         if (kchar <= 0xC) {  
           if (kstate == PRESSED) {
-            if (poly == POLY) {
+            if (poly == MONO) {
               all_notes_off();
             }
-            note_on(channel, kchar + octave, VELOCITY);
-            note_status[kchar + octave] = NOTE_ON;  
+            note_on(channel, MIDI_NOTE_NUM(kchar, octave), VELOCITY);
+            note_status[MIDI_NOTE_NUM(kchar, octave)] = NOTE_ON;  
           } else if (kstate == RELEASED) {
-            if (note_status[kchar + octave] == NOTE_ON) {
-              note_off(channel, kchar + octave);
-              note_status[kchar + octave] = NOTE_OFF;
+            if (note_status[MIDI_NOTE_NUM(kchar, octave)] == NOTE_ON) {
+              note_off(channel, MIDI_NOTE_NUM(kchar, octave));
+              note_status[MIDI_NOTE_NUM(kchar, octave)] = NOTE_OFF;
             }
           }
           
@@ -185,10 +214,14 @@ void loop() {
               }
             break;
             case CONFIG_PRESSED:
-              if (kchar == CONFIG_BUTTON && kstate == HOLD) {
-                write_digit(hex_character[channel]);
-                blink_seven_seg();
-                state = CONFIG_WAIT_RELEASE;
+              if (kchar == CONFIG_BUTTON) {
+                if (kstate == HOLD) {
+                  write_digit(hex_character[channel]);
+                  blink_seven_seg();
+                  state = CONFIG_WAIT_RELEASE;
+                } else if (kstate == RELEASED) {
+                  state = NORMAL;
+                }
               }
             break;
             case CONFIG_WAIT_RELEASE:
@@ -206,7 +239,7 @@ void loop() {
                   break;
                   case UP_BUTTON:
                     channel_up();
-                    write_digit(hex_character[octave]);
+                    write_digit(hex_character[channel]);
                     state = CHAN_UP_PRESSED;
                   break;
                   case CONFIG_BUTTON:
@@ -265,7 +298,7 @@ void flash_seven_seg() {
 }
 
 // write the seven segment digit preserving the decimal point
-void write_digit(char digit) {
+void write_digit(byte digit) {
   seven_seg_state = (seven_seg_state & 0x80) | (digit & 0x7F);
   SPI.transfer(seven_seg_state);
   digitalWrite(TLC5916_LE, HIGH);
@@ -273,8 +306,8 @@ void write_digit(char digit) {
 }
 
 // write the seven segment decimal preserving the digit
-void write_dec_point(char dec_point) {
-  seven_seg_state = (seven_seg_state & 0x7F) | (dec_point & 0x80);
+void write_dec_point(byte dec_point) {
+  seven_seg_state = (seven_seg_state & 0x7F) | (dec_point << 7);
   SPI.transfer(seven_seg_state);
   digitalWrite(TLC5916_LE, HIGH);
   digitalWrite(TLC5916_LE, LOW);
@@ -290,7 +323,7 @@ void octave_down() {
 
 void octave_up() {
   all_notes_off();
-  if (octave < 7) {
+  if (octave < HIGH_OCTAVE) {
     octave++;
     EEPROM.write(EE_ADDR_OCTAVE, octave);
   }
@@ -320,7 +353,7 @@ void toggle_poly() {
 
 // turn off all notes flagged as having been turned on
 void all_notes_off() {
-  char j;
+  byte j;
   for (j = 0; j < 128; j++) {
     if (note_status[j] == NOTE_ON) {
       note_off(channel, j);
@@ -330,15 +363,15 @@ void all_notes_off() {
 }
 
 // send MIDI note-on message
-void note_on(int channel, int pitch, int velocity) {
-  Serial.write(0x90 | (channel & 0x0F));
-  Serial.write(pitch & 0x7F);
-  Serial.write(velocity & 0x7F);
+void note_on(byte channel, byte pitch, byte velocity) {
+  Serial1.write(0x90 | (channel & 0x0F));
+  Serial1.write(pitch & 0x7F);
+  Serial1.write(velocity & 0x7F);
 }
 
 // send MIDI note-off message
-void note_off(int channel, int pitch) {
-  Serial.write(0x80 | (channel & 0x0F));
-  Serial.write(pitch & 0x7F);
-  Serial.write(127); // velocity
+void note_off(byte channel, byte pitch) {
+  Serial1.write(0x80 | (channel & 0x0F));
+  Serial1.write(pitch & 0x7F);
+  Serial1.write(127); // velocity
 }
