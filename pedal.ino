@@ -24,8 +24,8 @@
 #define FLASH_MS        (2000)
 #define BLINK_PERIOD_MS (500)
 
-#define TLC5916_OE (10)
-#define TLC5916_LE (11)
+#define TLC5916_OE (A5)
+#define TLC5916_LE (A4)
 
 // This utility macro function takes a key (0 = c, 1 = c#, 2 = b, etc) 
 //   and the octave number and returns a valid midi note number

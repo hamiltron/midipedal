@@ -20,16 +20,16 @@ documentation, diodes are a necessity for this type of application (one per swit
 
 There's a seven-segment display to show the octave and channel number. 
 The decimal point is used to indicate polyphonic mode. 
-The driver is the [TLC5916](http://www.ti.com/product/tlc5916) which is a snap use over the SPI interface 
-plus two extra outputs for the ~OE and LE pins. The current set resistor is 1K Ohm for approximately 20mA. 
+The driver is the [TLC5916](http://www.ti.com/product/tlc5916) which is a snap to use over the SPI interface 
+plus two extra Arduino outputs for the ~OE and LE pins. The current set resistor is 1K Ohm for 
+approximately 20mA. 
 The display I used is the Kingbright SA23-12SRWA which is about 6 cm high. It's nice and big and RED. 
 **Rant**: Yes, blue LED's are new and therefore prejudicially cool, and red LED's are dusty old hat. 
 But the reality 
 is that human eyes disperse blue light more that red (the reason a lot of sunglasses have yellow tint) 
 and these blue LED displays often have impressive 
 luminosity which when combined, turn what would otherwise be a number into a fuzzy blue blob, 
-leaving my 
-microwave clock unreadable unless you're standing right in front of it. 
+leaving my microwave clock unreadable unless you're standing right in front of it. 
 
 This seven segment display requires around 7.4 V to drive the segment diode strings, 
 so we need a boost which is 
@@ -41,6 +41,13 @@ on the datasheet design equations and they all matched close enough for confiden
 voltage is about 9 V as this should give the needed 7.4 V for the LED's plus the TLC5916 output drop of 
 about 1 V plus a small margin. This can be adjusted a bit if the display forward voltage deviates from 
 the expected value. 
+
+For the 5 V needed to drive the Atmel CPU, I decided to use the MCP1702 (5 V version) which supplies
+a max current of 250 mA (completely fine for this application) with a typical dropout of 0.33 V. This is a 
+much safer bet that using the onboard NCP1117 which has a spec'd dropout of 1.2 V 
+(granted, at much higher currrent) and even though the CPU will probably run fine with a little less than 
+5 V, having a roughly 0.4 V dropout gives much better margin of safety plus better mileage 
+from the batteries. 
 
 ## UI
 
