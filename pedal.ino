@@ -15,9 +15,9 @@
 #define VELOCITY (127)
 #define HIGH_OCTAVE (9)
 
-#define DOWN_BUTTON   (0xD)
-#define CONFIG_BUTTON (0xE)
-#define UP_BUTTON     (0xF)
+#define DOWN_BUTTON   (0x1D)
+#define CONFIG_BUTTON (0x1E)
+#define UP_BUTTON     (0x1F)
 
 #define DEBOUNCE_MS     (10)
 #define HOLD_MS         (2000)
@@ -30,7 +30,7 @@
 // This utility macro function takes a key (0 = c, 1 = c#, 2 = b, etc) 
 //   and the octave number and returns a valid midi note number
 //   Not that for efficiency, it does not bounds check. 
-#define MIDI_NOTE_NUM(key, octave) (key + 12 * octave)
+#define MIDI_NOTE_NUM(key, octave) (key - 0x10 + 12 * octave)
 
 enum states {
   NORMAL, 
@@ -58,10 +58,10 @@ const char hex_character[] = {
 };
 
 const char keys[4][4] = {
-  {0x0, 0x1, 0x2, 0x3},
-  {0x4, 0x5, 0x6, 0x7},
-  {0x8, 0x9, 0xA, 0xB},
-  {0xC, 0xD, 0xE, 0xF}
+  {0x10, 0x11, 0x12, 0x13},
+  {0x14, 0x15, 0x16, 0x17},
+  {0x18, 0x19, 0x1A, 0x1B},
+  {0x1C, 0x1D, 0x1E, 0x1F}
 };
 byte row_pins[4] = {6, 7, 8, 9}; 
 byte col_pins[4] = {2, 3, 4, 5}; 
@@ -78,6 +78,10 @@ unsigned long flash_timeout;
 
 void setup() {
   byte i;
+  
+  // turn off yellow LED
+  pinMode(SS, INPUT);
+  digitalWrite(SS, LOW);
   
   //  Set MIDI baud rate:
   Serial1.begin(31250);
@@ -163,7 +167,7 @@ void loop() {
         kstate = switches.key[i].kstate;
 
         // pedal note switches
-        if (kchar <= 0xC) {  
+        if (kchar < DOWN_BUTTON) {  
           if (kstate == PRESSED) {
             if (poly == MONO) {
               all_notes_off();
