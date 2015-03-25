@@ -1,5 +1,7 @@
 # Arduino One-Octave Foot Pedal MIDI Controller
 
+![pic of pedal](https://raw.githubusercontent.com/hamiltron/midipedal/master/pic.jpg)
+
 ## License
 
 MIT
